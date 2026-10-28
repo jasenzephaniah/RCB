@@ -111,6 +111,47 @@ def metrics_by(df: pd.DataFrame, key: str) -> pd.DataFrame:
     )
 
 
+def horizon_analysis(
+    fcst: pd.DataFrame,
+    actuals: pd.DataFrame,
+    start: date = date(2026, 1, 2),
+    end: date = date(2026, 2, 1),
+    bucket_h: int = 6,
+) -> pd.DataFrame:
+    """Error vs forecast horizon using ALL snapshots (not just the 09:00 one).
+    Unlike the fixed-cutoff view, this separates the horizon effect from the
+    hour-of-day effect. Targets limited to delivery days start..end (UK)."""
+    lo = pd.Timestamp(start.isoformat(), tz=UK_TZ).tz_convert("UTC")
+    hi = pd.Timestamp((end + timedelta(days=1)).isoformat(), tz=UK_TZ).tz_convert("UTC")
+    df = fcst[(fcst["startTime"] >= lo) & (fcst["startTime"] < hi)].copy()
+    df["horizon_h"] = (df["startTime"] - df["publishTime"]).dt.total_seconds() / 3600
+    df = df[df["horizon_h"] > 0].merge(actuals, on="startTime", how="inner")
+    df["error"] = df["forecast"] - df["actual"]
+    df["abs_error"] = df["error"].abs()
+    df["horizon_bucket"] = (df["horizon_h"] // bucket_h * bucket_h).astype(int)
+    return metrics_by(df, "horizon_bucket")
+
+
+def cutoff_sensitivity(
+    fcst: pd.DataFrame, actuals: pd.DataFrame, cutoffs=None
+) -> pd.DataFrame:
+    """How do the headline metrics change if the buyer decides earlier/later?"""
+    cutoffs = cutoffs or [f"{h:02d}:00" for h in range(4, 13)]
+    rows = []
+    for c in cutoffs:
+        df = evaluate(select_forecasts(fcst, cutoff=c), actuals)
+        m = compute_metrics(df)
+        rows.append({
+            "cutoff": c,
+            "mae_mw": m["mae_mw"],
+            "rmse_mw": m["rmse_mw"],
+            "bias_mw": m["bias_mw"],
+            "abs_error_p90_mw": m["abs_error_p90_mw"],
+            "n_hours": m["n_hours"],
+        })
+    return pd.DataFrame(rows)
+
+
 # ------------------------------------------------------------------- main
 def main() -> None:
     ap = argparse.ArgumentParser()
