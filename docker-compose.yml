@@ -1,0 +1,15 @@
+# Run the whole app locally:   docker compose up --build
+#   Dashboard:  http://localhost:3000
+#   API docs:   http://localhost:8000/docs
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
